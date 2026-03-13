@@ -72,3 +72,30 @@ exports.forgotPassword = async (req, res) => {
         res.status(500).send("Database Error");
     }
 };
+exports.resetPassword =async (req,res)=>{
+    try{
+        const {token , newPassword}=req.body;
+        const user=await User.findOne({
+            where:{
+                reset_token:token,
+                reset_token_expires:{[Op.gt]:new Date()}
+            }
+        });
+        if (!user) {
+            return res.status(400).send("Invalid or expired token");
+        }
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        await user.update({
+            password: hashedPassword,
+            reset_token: null,
+            reset_token_expires: null
+        });
+
+        return res.status(200).send("Password updated successfully! You can now login.");
+
+    } catch (err) {
+        console.error("Reset Error:", err);
+        return res.status(500).send("Error resetting password");
+    }
+};
+
