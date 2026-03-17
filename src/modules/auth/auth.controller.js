@@ -18,7 +18,6 @@ exports.register = async (req, res) => {
                     Email: result.user.email
                 }
             });
-
     }
     catch (error) {
         console.log(error)
@@ -31,7 +30,7 @@ exports.register = async (req, res) => {
 
 exports.login = async (req, res) => {
     try {
-        const { email, password, confirm_password } = req.body;
+        const { email, password, confirm_password }= req.body;
         const result= await authService.loginUser(req.body);
         if(result.error){
             return res.status(result.status).json({message:result.error});

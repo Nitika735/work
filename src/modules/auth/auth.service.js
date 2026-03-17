@@ -1,4 +1,5 @@
 const User = require("../../models/User");
+const Otp=require("../../models/Otp");
 const bcrypt = require("bcryptjs");// save hashed password in database
 const jwt = require("jsonwebtoken");//creates a token or id-card after login so whenever user visit new page the token can be check by the server
 const { Op } = require("sequelize");
@@ -43,35 +44,37 @@ exports.loginUser = async ({email,password,confirm_password}) => {
 }
 
 exports.forgotPassword = async (email) => {
-
-    const otp = Math.floor(1000 + Math.random() * 9000).toString();//4 digit otp from 1000 to 8999
+    const user=await User.findOne({where:{email}});
+    if(!user){
+        return {updatedRows:0};
+    }
+    const otpCode = Math.floor(1000 + Math.random() * 9000).toString();//4 digit otp from 1000 to 8999
     const expires = new Date(Date.now() + 600000);//set expiry to 10min from now (1min=60,000 so 10 min=10*60*1000)
-    const updatedRows = await User.update({
-        reset_token: otp,
-        reset_token_expires: expires
-    },
-        { where: { email } }
-    );
-    return { updatedRows, otp };
+    await Otp.create({email,code:otpCode,expires_at:expires});
+    return {updatedRows:1,otp:otpCode}
 };
 
 exports.resetPassword =async (otp,newPassword)=>{
-     const user = await User.findOne({
+     const otpRecord = await Otp.findOne({
             where: {
-                reset_token:otp,
-                reset_token_expires: { [Op.gt]: new Date() }
+                code:otp,
+                expires_at: { [Op.gt]: new Date() }
             }
         });
-        if (!user) {
-            return {error:"Invalid or expired token" , status:400};
+        if (!otpRecord) {
+            return {error:"Invalid or expired otp" , status:400};
+        }
+        const user = await User.findOne({
+            where:{email:otpRecord.email}
+        });
+        if(!user){
+            return {error:"user not found",status:404};
         }
         const hashedPassword = await bcrypt.hash(newPassword, 10);
-
         await user.update({
-            password: hashedPassword,
-            reset_token: null,
-            reset_token_expires: null
-        });
+            password: hashedPassword
+            });
+            await otpRecord.destroy();
         return {sucsess:true};
 };
 
