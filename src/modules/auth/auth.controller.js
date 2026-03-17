@@ -1,96 +1,82 @@
-const { error } = require("console");
-const User = require("../../models/User");
-const bcrypt = require("bcryptjs");// save hashed password in database
-const crypto = require("crypto");//creates temporary secret string or (token) expires after a short time
-const jwt = require("jsonwebtoken");//creates a token or id-card after login so whenever user visit new page the token can be check by the server
-const { Op } = require("sequelize");
+const authService = require("./auth.service");
 
 exports.register = async (req, res) => {
     try {
-        const { name, email, password } = req.body;
-        const hashedPassword = await bcrypt.hash(password, 10);
-        await User.create({
-            name,
-            email,
-            password: hashedPassword,
-
-        });
-        res.status(201).send("User Registered Successfully");
+        const {password, confirm_password } = req.body;
+        if (password !== confirm_password) {
+         return res.status(400).json({message:"password do not match"});
+        }
+        const result=await authService.registerUser(req.body);
+        if(result.error){
+            return res.status(result.status).json(result.error);
+        }
+        res.status(201).json({
+                message: "User Registered Successfully",
+                user: {
+                    Id: result.user.id,
+                    Name: result.user.first_Name,
+                    Email: result.user.email
+                }
+            });
 
     }
     catch (error) {
         console.log(error)
-        res.status(500).send("Error registering user");
-
+        res.status(500).json({
+            message: "error registering user",
+            error: error.message
+        });
     }
 };
 
 exports.login = async (req, res) => {
     try {
-        const { email, password } = req.body;
-        const user = await User.findOne({ where: { email } });
-        if (user && await bcrypt.compare(password, user.password)) {
-            const token = jwt.sign(
-                { id: user.id, email: user.email },
-                process.env.JWT_SECRET,
-                { expiresIn: "1h" }
-            );
-            return res.status(200).json({
-                message: "Login Successful",
-                token: token
-            });
-
+        const { email, password, confirm_password } = req.body;
+        const result= await authService.loginUser(req.body);
+        if(result.error){
+            return res.status(result.status).json({message:result.error});
         }
-        else {
-            res.status(401).send("Invalid user");
-        }
+        return res.status(200).json({
+            message: "Login Successful",
+            token: result.token,
+            user: {
+                Id: result.user.id,
+                Name: result.user.first_Name,
+                Email: result.user.email
+            }
+        });
     }
     catch (error) {
         console.log(error)
-        res.status(500).send("Server Error");
+        res.status(500).json({
+            message: "Server Error"
+        });
     }
 };
 exports.forgotPassword = async (req, res) => {
     try {
-        const { email } = req.body;
-        const token = crypto.randomBytes(32).toString("hex");//create 64 character password using hexadecimal(0-9,a-f)
-        const expires = new Date(Date.now() + 600000);//set expiry to 10min from now (1min=60,000 so 10 min=10*60*1000)
-        const [updatedRows] = await User.update(
-            { reset_token: token, reset_token_expires: expires },
-            { where: { email } }
-        );
+        const result= await authService.forgotPassword(req.body.email);
 
-        if (updatedRows === 0)
-            return res.status(404).send("User not found");
-         return res.json({ 
-            message: "Token generated and saved successfully", 
-            token: token 
+        if (result.updatedRows=== 0){
+            return res.status(404).json({message:"User not found"});
+        }
+        return res.json({
+            message: "Otp generated and saved successfully",
+            OTP:result.otp
         });
     }
     catch (error) {
         console.log(error)
-        res.status(500).send("Database Error");
+        res.status(500).json({message:"Database Error"});
     }
 };
-exports.resetPassword =async (req,res)=>{
-    try{
-        const {token , newPassword}=req.body;
-        const user=await User.findOne({
-            where:{
-                reset_token:token,
-                reset_token_expires:{[Op.gt]:new Date()}
-            }
-        });
-        if (!user) {
-            return res.status(400).send("Invalid or expired token");
+exports.resetPassword = async (req, res) => {
+    try {
+        const { otp, newPassword } = req.body;
+        const result= await authService.resetPassword(otp,newPassword);
+        if(result.error){
+            return res.status(result.status).json(result.error);
         }
-        const hashedPassword = await bcrypt.hash(newPassword, 10);
-        await user.update({
-            password: hashedPassword,
-            reset_token: null,
-            reset_token_expires: null
-        });
-
         return res.status(200).send("Password updated successfully! You can now login.");
 
     } catch (err) {
@@ -99,3 +85,40 @@ exports.resetPassword =async (req,res)=>{
     }
 };
 
+exports.getAllUsers = async(req,res)=>{
+    try{
+        const users=await authService.getAllUsers();
+        res.status(200).json({
+            message:"Users reterived successfully",
+            count:users.length,
+            data:users
+        });
+    }
+    catch(error){
+        console.log(error);
+        res.status(500).json({
+            message:"Error fetching users data",
+            error:error.message
+        });
+    }
+};
+exports.getUserById=async(req,res)=>{
+    try{
+        const{id}=req.params;
+        const user=await authService.getUserById(id);
+        if(!user){
+            return res.status(400).json({message:"user not found"});
+        }
+        res.status(200).json({
+            message:"user reterived successfully",
+            data:user
+        });
+    }
+    catch(error){
+        console.log(error);
+        res.status(500).json({
+            message:"Server error or error fetching data",
+            error:error.message
+        });
+    }
+};
